@@ -16,6 +16,7 @@ class LogoutController extends Controller
     public function index(Request $request)
     {
         $slo_redirect = $request->session()->get('saml.slo_redirect');
+
         if (!$slo_redirect) {
             $this->setSloRedirect($request);
             $slo_redirect = $request->session()->get('saml.slo_redirect');
@@ -25,6 +26,9 @@ class LogoutController extends Controller
             $request->session()->put('saml.slo', []);
         }
 
+
+        $services = [];
+
         // Need to broadcast to our other SAML apps to log out!
         // Loop through our service providers and "touch" the logout URL's
         foreach (config('samlidp.sp') as $key => $sp) {
@@ -32,7 +36,7 @@ class LogoutController extends Controller
             if (!empty($sp['logout']) && !in_array($key, $request->session()->get('saml.slo', []))) {
                 // Push this SP onto the saml slo array
                 $request->session()->push('saml.slo', $key);
-                return redirect(SamlSlo::dispatchSync($sp));
+                $services[] =  SamlSlo::dispatchSync($sp);
             }
         }
 
@@ -44,6 +48,14 @@ class LogoutController extends Controller
         $request->session()->forget('saml.slo');
         $request->session()->forget('saml.slo_redirect');
 
+
+        foreach ($services as $service){
+            if(Str::startsWith($service, $slo_redirect)){
+                $slo_redirect = $service;
+                break;
+            }
+        }
+
         return redirect($slo_redirect);
     }
 
@@ -51,7 +63,9 @@ class LogoutController extends Controller
     {
         // Look for return_to query in case of not relying on HTTP_REFERER
         $http_referer = $request->has('return_to') ? $request->get('return_to') : $request->server('HTTP_REFERER');
+
         $redirects = config('samlidp.sp_slo_redirects', []);
+
         $slo_redirect = config('samlidp.login_uri');
         foreach ($redirects as $referer => $redirectPath) {
             if (Str::startsWith($http_referer, $referer)) {
